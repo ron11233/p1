@@ -18,14 +18,37 @@ Return an edge that can be removed so that the resulting graph is a tree of n no
  *    normal: ...   tricky: ...   edge: ...
  *
  * 4. APPROACHES
- *    1. Naive:   ...   Time O(...)  Space O(...)
- *    2. Better:  ...   Time O(...)  Space O(...)
+ *    1. Naive:   run through all vertexes from last to first - and each time try to build a tree. if success return vertex   Time O((V+E)n)  Space O(V+E)
+ *    2. Better:  union find   Time O(n)  Space O(n)
  *    → implementing #_ because ...
  *
  * 5. CODE below      
  *6. WALKTHROUGH: step | state | result
  */
 
-var template = function() {
-    // ...
+var redundantConnection = function(edges) {
+
+    const parent = [];
+    const n = edges.length;
+
+    for(let node = 1; node < n + 1; node++){
+        parent[node] = node;
+    }
+
+    const find = (node) => {
+        if(parent[node] === node) return parent[node];
+        
+        parent[node] = find(parent[node]);
+        return parent[node]
+    }
+
+    for(const [nodeA, nodeB] of edges){
+        const nodeAParent = find(nodeA);
+        const nodeBParent = find(nodeB);
+
+        if(nodeAParent === nodeBParent) return [nodeA,nodeB]
+        parent[nodeAParent] = nodeBParent
+    }
+
+    
 };
