@@ -1,4 +1,4 @@
-684. Redundant Connection
+684. Redundant Connection - need to redo
 
 In this problem, a tree is an undirected graph that is connected and has no cycles.
 
@@ -6,6 +6,8 @@ You are given a graph that started as a tree with n nodes labeled from 1 to n, w
 
 Return an edge that can be removed so that the resulting graph is a tree of n nodes. If there are multiple answers, return the answer that occurs last in the input.
 
+
+    
 /*
  *
  * 1. PROBLEM
@@ -20,7 +22,7 @@ Return an edge that can be removed so that the resulting graph is a tree of n no
  * 4. APPROACHES
  *    1. Naive:   run through all vertexes from last to first - and each time try to build a tree. if success return vertex   Time O((V+E)n)  Space O(V+E)
  *    2. Better:  union find   Time O(n)  Space O(n)
- *    → implementing #_ because ...
+ *    → implementing #2 because more efficient 
  *
  * 5. CODE below      
  *6. WALKTHROUGH: step | state | result
