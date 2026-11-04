@@ -13,17 +13,19 @@ Given the head of a singly linked list, reverse the list, and return the reverse
 
 2. CONSTRAINTS
    My questions, before looking at the given constraints:
-   -
+   - what n limit? range?  if no nodes return null? 1 node just return ok
    -
 
    GIVEN:
-   <paste the given constraints here>
+      The number of nodes in the list is the range [0, 5000].
+      -5000 <= Node.val <= 5000
+
 
 
 3. EXAMPLES
-   normal:
-   tricky:
-   edge:
+   normal:1 -> 3 -> 5 -> -3 
+   tricky: -4
+   edge: null
 
 
 4. APPROACHES
@@ -50,7 +52,19 @@ Given the head of a singly linked list, reverse the list, and return the reverse
  * @return {ListNode}
  */
 var reverseList = function(head) {
-    
+   
+   let prevNode = null
+   let currentNode = head
+   
+   while(currentNode){
+      let nextNode = currentNode.next
+      currentNode.next = prevNode
+      prevNode = currentNode
+      currentNode = nextNode
+   }
+   
+   
+   return prevNode;
 };
 
 
