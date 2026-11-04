@@ -8,28 +8,30 @@ Return true if there is a cycle in the linked list. Otherwise, return false.
 
 
 1. PROBLEM
-   Input:
-   Output:
+   Input:   head of linked list might be with cycles
+   Output:   true if there is cycle false if normal LL
    Rule:
 
 
 2. CONSTRAINTS
    My questions, before looking at the given constraints:
-   -
-   -
+   -   length of list? 
+   -   can value be same? 
 
    GIVEN:
-   <paste the given constraints here>
+      The number of the nodes in the list is in the range [0, 104].
+      -105 <= Node.val <= 105
+      pos is -1 or a valid index in the linked-list.
 
 
 3. EXAMPLES
-   normal:
+   normal: 1 2 3 4 
    tricky:
    edge:
 
 
 4. APPROACHES
-   1. Naive:    Time O(...)  Space O(...)
+   1. Naive:  run with 2 pointers one 1 step second 2 step. if one of them reaches null finished. if reach each other cycle  Time O(nodes num)  Space O(1)
    2. Better:   Time O(...)  Space O(...)
    3. Optimal:  Time O(...)  Space O(...)
    → implementing #_ because ...
@@ -53,8 +55,16 @@ Return true if there is a cycle in the linked list. Otherwise, return false.
  * @return {boolean}
  */
 var hasCycle = function(head) {
-    
-};
+    let slowPointer = head;
+    let fastPointer = head;
 
+   while(fastPointer && fastPointer.next){
+      slowPointer = slowPointer.next
+      fastPointer = fastPointer.next.next
+      if(slowPointer === fastPointer)return true
+   }
+   
+   return false
+};
 
 7. VERIFICATION
