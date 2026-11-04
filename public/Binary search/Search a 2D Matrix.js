@@ -19,22 +19,28 @@ You must write a solution in O(log(m * n)) time complexity.
 
 2. CONSTRAINTS
    My questions, before looking at the given constraints:
-   -
-   -
+   - m n limits
+   - can numbers repeat? 
+    - CAN HAVE negetive numbers? 
 
    GIVEN:
-   <paste the given constraints here>
+      Constraints:
+      
+      m == matrix.length
+      n == matrix[i].length
+      1 <= m, n <= 100
+      -104 <= matrix[i][j], target <= 104
 
 
 3. EXAMPLES
-   normal:
+   normal: 1 2 3, 4 5 6 , 7 8 9 
    tricky:
    edge:
 
 
 4. APPROACHES
-   1. Naive:    Time O(...)  Space O(...)
-   2. Better:   Time O(...)  Space O(...)
+   1. Naive: just iterate all m*n and look for num     Time O(n)  Space O(1)
+   2. Better: binary search.    Time O(log(n))  Space O(1)
    3. Optimal:  Time O(...)  Space O(...)
    → implementing #_ because ...
 
@@ -50,7 +56,24 @@ You must write a solution in O(log(m * n)) time complexity.
  * @return {boolean}
  */
 var searchMatrix = function(matrix, target) {
-    
+    let left = 0;
+    const rows = matrix.length;
+    const columns = matrix[0].length
+   
+    let right = (rows * columns) -1
+
+    while(left<=right){
+       let mid = Math.floor((right+left)/2)
+       const midRow = Math.floor(mid/columns);
+       const midColumn = mid%columns;
+
+       if(matrix[midRow][midColumn] === target)return true
+       if(matrix[midRow][midColumn] > target) right = mid - 1
+       else{
+          left = mid + 1
+       }
+    }
+   return false; 
 };
 
 
