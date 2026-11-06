@@ -66,14 +66,11 @@ const isValid = (node, low, high) => {
 }
 
 var isValidBST = function (root) {
-    const min = -Infinity
-    const max = Infinity
-
-    if (!root) return true
-
-    return isValid(root.left, min, root.val) && isValid(root.right, root.val, max)
+    return isValid(root, -Infinity, Infinity) 
 
 };
+
+
 
 time: n space: h
 
