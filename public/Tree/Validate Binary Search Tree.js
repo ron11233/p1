@@ -36,6 +36,7 @@ edge
 pass max val 
 
 
+return leftSubtree max <= currentnode.val && currentnode.val <= rightsubtree min
 
       
 
@@ -55,16 +56,26 @@ pass max val
  * @param {TreeNode} root
  * @return {boolean}
  */
-var isValidBST = function(root) {
-    
-    const maxVal = isValidBST(root.left);
-    const minVal = isValidBST(root.right);
 
-    
-    return maxVal 
+const isValid = (node, low, high) => {
+    if (!node) return true;
+
+    if (node.val >= high || node.val <= low) return false
+
+    return isValid(node.left, low, node.val) && isValid(node.right, node.val, high)
+}
+
+var isValidBST = function (root) {
+    const min = -Infinity
+    const max = Infinity
+
+    if (!root) return true
+
+    return isValid(root.left, min, root.val) && isValid(root.right, root.val, max)
+
 };
 
-
+time: n space: h
 
 
 
