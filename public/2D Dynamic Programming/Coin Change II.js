@@ -53,6 +53,12 @@ basecase: reached real amount.
 
 
 
+promise: combinationsCount[coinIndex][amount] - amount of combinations from amount with all coins until coinIndex inclusive.
+me: amountOfCombinations for me is - either use my coin -  combinationsCount[coinIndex][amount-coin[coinIndex]] + skip my coin combinationsCount[coinIndex-1][amount]
+basecase: real amount is reached. if lower also return 0;
+
+
+
   /**
  * @param {number} amount
  * @param {number[]} coins
@@ -61,3 +67,6 @@ basecase: reached real amount.
 var change = function(amount, coins) {
     
 };
+
+
+const 
