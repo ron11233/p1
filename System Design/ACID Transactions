@@ -65,5 +65,6 @@ Phantom
 In an interview: this is the double-booking problem in ticket, hotel and seat-booking designs. The standard answer is rows that exist in advance (one row per seat) plus a lock or a unique constraint.
 
 
-11. 
+11. Achieving ACID: Serial Execution
+
 
