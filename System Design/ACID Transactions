@@ -1,0 +1,69 @@
+
+ACID transactions
+1. A is Atomicity, not “autonomous”. It means all or nothing: every write in the transaction happens, or none does.
+2. Consistency means the data always obeys its rules, such as “a balance is never negative”. “Fail gracefully” belongs to atomicity. It is also a different thing from consistency in distributed systems, where it means all replicas show the same data.
+3. Isolation: “treats the latest data before it” is vague. Say that each transaction behaves as if it were the only one running.
+4. The write-ahead log directly gives atomicity and durability. Consistency follows from those two plus the rules you define, so it is indirect.
+
+8. ACID transactions
+* Transaction: a group of reads and writes treated as one unit. It ends with a commit (keep everything) or a rollback (undo everything).
+* Example: transferring $100 from A to B is two writes, subtract from A and add to B. One must never happen without the other.
+	Meaning	In the transfer example
+Atomicity	All or nothing: every write happens, or none does	A crash after “subtract from A” undoes it, so no money vanishes
+Consistency	The data obeys its rules before and after	A transfer that would make a balance negative is rejected
+Isolation	Concurrent transactions don’t interfere; each behaves as if it ran alone	Two transfers from A at the same moment can’t both spend the same $100
+Durability	Once committed, the data survives a crash	After “transfer complete”, a power cut doesn’t lose it
+
+ 8. Read Committed Isolation | Systems Design Interview: 0 to 1 with Google Software Engineer
+* What it is: the basic isolation level, with two guarantees. It is the default in Postgres.
+    1. No dirty reads: you only see committed data.
+    2. No dirty writes: you only overwrite committed data.
+Dirty write
+* Problem: two transactions update the same two rows at the same time and their writes interleave. We end up with row 1 from one transaction and row 2 from the other, a mix nobody intended. Example: two people buy the last ticket at once, and the ticket row says Bob owns it while the payment row charges Alice.
+* Fix: a row lock. A transaction locks each row it writes and holds the lock until it commits or rolls back. Anyone else writing that row waits.
+Dirty read
+* Problem: a transaction reads another transaction’s writes before they are committed. Example: I send $10 to my mom. A read in the middle sees the $10 gone from my account and not yet in hers. If the transfer rolls back, that reader saw data that never existed.
+* Fix: while a write is in progress, the DB keeps two values, the old committed one and the new uncommitted one. Readers get the old value until the writer commits, and then the DB switches to the new one.
+* Why not a lock for reads too: one slow write would block every reader of that row.
+What it does not prevent: other race conditions. For example, two reads inside one transaction can return different values because someone else committed in between. The stronger isolation levels in the next videos deal with those.
+
+9. Snapshot isolation
+* The problem (read skew): read committed only promises that each read sees committed data. A transaction that makes several reads can still see a mix of before and after.
+    * I have $500 in each of two accounts. While I’m checking them, a transfer of $100 from account B to account A commits.
+    * I read account A before the transfer and see $500.
+    * I read account B after the transfer and see $400.
+    * The total looks like $900, so $100 seems to have vanished. Every read was of committed data, so read committed allows this.
+* Why it matters: it is a nuisance for one page view and serious for long reads. A backup or analytics query that runs for an hour would capture a mix of old and new data.
+* The idea: each transaction sees the database frozen as it was when the transaction started. Whatever others commit in the meantime is invisible to it. In the example, both reads show $500.
+* How (MVCC, multi-version concurrency control):
+    * A write does not overwrite a row. It adds a new version, tagged with the ID of the transaction that wrote it, and IDs increase over time.
+    * A transaction reads the newest version that was committed before it started, and ignores anything newer.
+    * Old versions are deleted once no running transaction needs them.
+* Benefit: readers never block writers, and writers never block readers. Writers still lock rows against each other, as in read committed.
+* Naming: Postgres and MySQL call this level “repeatable read”.
+* What it does not prevent: races where two transactions both read the same data and then both write based on what they read. That is the next video.
+* In an interview: “Reads run on a consistent snapshot using MVCC, so long reads such as analytics don’t block writes.”
+
+
+10. Write skew and phantoms
+Write skew
+* What it is: two transactions read the same data, each decides based on it, and each writes a different row. Each write is fine alone, and together they break a rule.
+* Example: the rule is that at least one doctor is on call. Alice and Bob are both on call and both ask for a break at the same moment.
+    1. Alice’s transaction checks and sees 2 doctors on call, so she may leave.
+    2. Bob’s transaction checks and sees 2 doctors on call, so he may leave.
+    3. Alice sets her row to off, and Bob sets his row to off.
+    4. Nobody is on call.
+* Why the earlier protections miss it: they write different rows, so their row locks never collide. With snapshot isolation, each one keeps seeing “2 on call” in its own snapshot.
+* Fix: lock the rows you read, not just the row you write. In SQL this is SELECT ... FOR UPDATE on all on-call doctors. The second transaction waits, then sees only one doctor on call and does not leave.
+Phantom
+* What it is: the same kind of race, but the decision is based on rows that don’t exist yet, so there is nothing to lock.
+* Example: two people check “is there a booking for room 5 at 12:00?” Both see none, both insert a booking, and the room is double-booked.
+* Fixes:
+    * Create the rows in advance: one row per room per time slot, so there is a row to lock.
+    * Unique constraint: make (room, time slot) unique, and the DB rejects the second insert.
+    * Serializable isolation: the strongest level, covered in the next videos.
+In an interview: this is the double-booking problem in ticket, hotel and seat-booking designs. The standard answer is rows that exist in advance (one row per seat) plus a lock or a unique constraint.
+
+
+11. 
+
