@@ -106,3 +106,38 @@ Readers and writers wait for each other. In snapshot isolation they never do.
 A slow transaction holds its locks until it ends, and blocks everyone who touches those rows.
 Throughput is much lower, response times are unpredictable, and each deadlock throws away the aborted transaction’s work.
 
+
+13. SSI is snapshot isolation plus one check at commit. If someone else changed something you read and committed before you, your transaction is aborted and the app retries it.
+
+How it works
+
+Every transaction reads from its own snapshot, exactly as in snapshot isolation. Readers and writers never wait for each other.
+The database notes what each transaction read. It uses index ranges, as in 2PL, so phantoms are covered too. These notes never block anyone; they only raise a warning when someone writes to something that was read.
+When a transaction commits, the database asks one question: did another transaction change something you read, and commit before you?
+If yes, your decision may be based on old data, so your transaction is aborted and the app retries it with a fresh snapshot.
+If no, you commit.
+
+The doctors, step by step
+
+Alice and Bob both start, and both read “2 on call”. The database notes that both of them read the on-call rows.
+Alice sets her row to off call. Bob read that row, so the database warns Bob that what he read may be out of date.
+Bob sets his row to off call. Alice read that row, so Alice gets the same warning.
+Alice commits first. Bob’s change hasn’t committed yet, so nothing Alice read has really changed, and her commit succeeds.
+Bob tries to commit. Alice’s change to a row he read has now committed, so his “2 on call” is out of date. Bob is aborted.
+The app retries Bob’s transaction. His new snapshot shows 1 on call, so he stays.
+
+The first to commit wins, and the later one retries.
+
+The two cases in the video. The video splits the check by timing. Either the other transaction wrote before your read (your snapshot hid the change because it wasn’t committed yet), or it wrote after your read. Both lead to the same question at commit, so you don’t need to tell them apart.
+
+Why it’s called optimistic. 2PL is pessimistic: transactions that touch the same rows wait for each other up front, even when the result would have been fine. SSI assumes things will be fine and lets everyone run. It pays only when it detects a conflict, and the price is the aborted transaction’s wasted work. In the doctors example both methods end the same way, with one doctor retried. The difference is the waiting along the way.
+
+Pros:
+Readers and writers never wait for each other, so response times stay steady and long reports run smoothly.
+It isn’t capped at one CPU core, unlike serial execution.
+Cons:
+Each abort wastes work, and the app must retry.
+With many conflicts (many transactions fighting over the same rows), most of them abort, and it gets slower than 2PL.
+Long transactions that write are likely to be aborted, so keep them short.
+To keep tracking cheap, it sometimes aborts harmless transactions too.
+Used in: the serializable level of Postgres.
