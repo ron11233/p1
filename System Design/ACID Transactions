@@ -65,6 +65,44 @@ Phantom
 In an interview: this is the double-booking problem in ticket, hotel and seat-booking designs. The standard answer is rows that exist in advance (one row per seat) plus a lock or a unique constraint.
 
 
-11. Achieving ACID: Serial Execution
+Serial execution
 
+Idea: races only happen when transactions overlap. So the database runs every transaction on one thread, one at a time, from start to finish. With no overlap there are no conflicts and no locks.
+Clients: any number of app servers can send transactions. They wait in a queue, and the thread takes them one by one.
+The rule: while the thread waits for anything, every other transaction waits too. So it needs:
+All the data in RAM, so a transaction never waits for the disk.
+Short transactions, because one slow transaction blocks everyone behind it.
+Stored procedures. A transaction with several steps is saved in the database as code and run with one call. Otherwise the thread would sit idle between steps, waiting for the app to send its next command over the network.
+Cons:
+Capped at one CPU core. To go further, split the data into partitions with one thread each. That only works while each transaction stays inside one partition. Transactions across partitions are much slower.
+Data size is limited by RAM.
+Stored procedures are hard to maintain. The logic lives in the database and not in your codebase, so it is harder to test, version and debug. A slow one also blocks the whole database.
+Example: Redis runs commands one at a time on a single thread. That is why a single command or script is atomic without locks.
+
+12. Serializable isolation: two-phase locking (2PL)
+Idea: transactions run at the same time, but locks make readers and writers of the same row wait for each other. The result is serializable.
+
+How it works
+
+Read lock (shared): taken automatically on every row a transaction reads. Many transactions can hold it at once.
+Write lock (exclusive): taken automatically on every row a transaction writes. You only get it when nobody else holds any lock on the row. While you hold it, nobody else can read or write that row.
+Two phases: a transaction takes locks while it runs (phase 1), and releases them all at once when it commits or aborts (phase 2).
+Result: nothing you read can change until you finish, so none of the races in sections 8 to 10 can happen. Phantoms need one more kind of lock, covered below.
+
+Deadlocks
+
+Problem: Alice and Bob both read both doctor rows, so each holds a read lock on both. Each now wants a write lock on their own row, but the other’s read lock blocks it. They wait for each other forever.
+Fix: the database detects the waiting cycle, aborts one transaction, and the app retries it. The retry sees only 1 doctor on call and stays, so the write skew never happens.
+
+Phantoms
+
+Problem: a row that doesn’t exist yet has no lock to take.
+Predicate lock: lock the query’s condition itself, for example “bookings for room 5 at 12:00”. Any insert, update or delete that matches it has to wait, even for rows that don’t exist yet. It’s precise but slow, because every write is checked against all the active conditions.
+Index-range lock: lock a range of an index that covers the condition, for example all bookings for room 5 at any time. It blocks some writes it didn’t need to, but the check is fast, so this is what databases use in practice. If there is no suitable index, the database locks the whole table.
+
+Main con: it’s slow
+
+Readers and writers wait for each other. In snapshot isolation they never do.
+A slow transaction holds its locks until it ends, and blocks everyone who touches those rows.
+Throughput is much lower, response times are unpredictable, and each deadlock throws away the aborted transaction’s work.
 
