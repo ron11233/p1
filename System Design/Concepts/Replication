@@ -30,4 +30,103 @@ A bonus of the logical log: other systems can read it too, for example to keep a
 
 In an interview: “I’d replicate the database: the leader takes writes and the replicas serve reads. Replication is semi-synchronous, so every write is on two machines and one slow replica can’t block writes. Reads from replicas can be slightly stale, so anything that must be fresh reads from the leader.”
 
+17. Dealing with stale reads (replication lag)
 
+1. Read your own writes
+
+The story:
+Maya changes her profile picture. The write goes to the leader.
+She refreshes the page, and the read goes to replica B, which hasn’t received the change yet.
+She sees her old picture, thinks the change failed, and uploads it again.
+The guarantee: a user always sees their own changes. Other people may see them a little later, which is fine.
+Fixes:
+Read what the user can edit from the leader. Maya’s own profile is read from the leader, and other people’s profiles from replicas. This works when a user can only edit a few things.
+Read from the leader for a short time after the user writes, for example for one minute.
+The client remembers the position of its last write in the log. A replica may serve the read only if it has caught up to that position. Otherwise, another replica or the leader serves it.
+L5 detail: if Maya edits on her laptop and checks on her phone, the “last write” information has to be stored on the server, not in one device’s browser.
+
+2. Monotonic reads: never going back in time
+
+The story:
+Maya refreshes, and the read goes to replica A, which is up to date. She sees Dan’s new comment.
+She refreshes again, and this time the read goes to replica B, which is further behind.
+Dan’s comment disappears. For Maya, the data went back in time.
+The guarantee: once you’ve seen something, you never see an older version. Your data may be slightly behind, but it only moves forward.
+Fix: each user always reads from the same replica, chosen from their user ID, for example by hashing it. If that replica dies, the user moves to another one.
+
+3. Consistent prefix reads: keeping the order
+
+The story:
+Dan asks, “What time is the concert?” Maya answers, “9pm.”
+The two messages are stored in different parts of the database, each copied separately. Maya’s part copies faster.
+A third user sees “9pm” before the question: the answer arrives before what it answers.
+The guarantee: if one write happened because of another, everyone sees them in that order.
+Fixes:
+Keep related writes together. For example, store all the messages of one chat in the same part, so they’re copied in order.
+Or attach to each write what it depends on. Maya’s reply says it comes after Dan’s question, and isn’t shown until the question is visible.
+This mostly happens once data is split across machines, which is partitioning, later in the course.
+
+Summary
+
+Problem	What the user sees	Fix
+Read your own writes	My own change disappears	Read my data from the leader for a minute after I write
+Monotonic reads	Something disappears after a refresh	Always read from the same replica
+Consistent prefix	The answer before the question	Keep related writes in the same part of the data
+
+In an interview: “Replication is asynchronous, so I’ll handle lag. A user’s own data is read from the leader for a minute after they write, so they always see their changes. Each user sticks to one replica, so data never goes backward.”
+
+
+18. Single-leader replication
+
+How it works
+
+One replica is the leader. Every write goes to it.
+The leader saves the write and sends it to the followers through the replication log (the logical log from section 16). Followers apply the changes in the same order.
+Reads can go to the leader or to any follower. Followers are read-only.
+
+Adding a new follower
+
+You can’t just copy the leader’s files while writes keep arriving. The copy would mix different moments, like the read skew story in section 9.
+Instead:
+Take a consistent snapshot of the leader. That’s snapshot isolation, so nothing has to be locked.
+Note the snapshot’s position in the log.
+Copy the snapshot to the new follower.
+The follower asks the leader for every change after that position, applies them, and from then on follows normally.
+
+A follower crashes
+
+The follower remembers the last log position it applied. When it restarts, it asks the leader for everything after that position, catches up, and continues. Nothing special is needed.
+
+The leader crashes: failover
+
+Detect it. The usual signal is the leader not responding for some time, for example 30 seconds.
+Choose a new leader. Pick the follower that is furthest ahead in the log, so the fewest writes are lost. All the nodes must agree on the choice, which is called consensus and comes later in the course.
+Switch over. Writes now go to the new leader. If the old leader comes back, it must become a follower.
+
+What can go wrong in failover (the L5 part)
+
+Lost writes. With asynchronous replication, the old leader may have confirmed writes 101 to 105 while the new leader only has up to 102. Writes 103 to 105 are gone, and when the old leader returns, its extra writes are usually thrown away.
+A real case: at GitHub in 2012, an out-of-date follower was promoted. It handed out ID numbers the old leader had already used, those IDs were also stored in Redis, and some users saw other users’ private data.
+Fix: semi-synchronous replication (section 16). Promote the replica that has every confirmed write.
+Split brain. The old leader wasn’t dead, just slow or cut off from the network. Now two leaders accept writes, and the data conflicts.
+Fix: fencing, which means making sure the old leader can no longer write. For example, each leader gets a number called a term, and writes carrying an old term are rejected.
+Choosing the timeout.
+Too short: a brief slowdown triggers a failover nobody needed, and the extra work makes the slowdown worse.
+Too long: nobody can write during that time.
+
+Pros
+
+Simple to understand and run.
+No write conflicts, because the leader decides the order of all writes.
+Reads scale by adding followers.
+Up-to-date reads are possible from the leader, and transactions work as they do on a single database.
+
+Cons
+
+All writes go through one machine, so write throughput is capped. The fix is partitioning.
+Failover is risky: lost writes, split brain, and a short period with no writes.
+Users far from the leader write slowly, because every write travels to the leader’s region.
+
+Used in: Postgres, MySQL and MongoDB. It’s the default choice. The next videos cover when to choose multi-leader or leaderless replication instead.
+
+In an interview: “Single leader with semi-synchronous replication. Writes go to the leader and reads go to the followers, except a user’s own recent writes, which are read from the leader. If the leader dies, the follower that has every confirmed write is promoted automatically, and fencing stops the old leader from writing. One machine handles all writes, so if that isn’t enough, I’d partition.”
