@@ -1,0 +1,33 @@
+16. Replication: intro
+Replication: keeping copies of the same data on several machines, called replicas.
+Leader: the copy that takes the writes. The other replicas, also called followers, copy from it. The next video covers this in detail.
+
+Why replicate
+
+Durability: a write-ahead log survives a crash, but not a dead disk or a destroyed machine. A copy on another machine does.
+Availability: with one database, its failure stops the whole app, which makes it a single point of failure. With copies, another one takes over.
+Latency: a copy close to the users answers faster, for example one copy in Europe and one in the US.
+Read throughput: one Postgres serves roughly 10,000 simple reads a second, so five copies serve about five times that.
+Replication doesn’t scale writes: every copy must apply every write. To scale writes, you split the data across machines (partitioning, later).
+
+Synchronous vs asynchronous
+
+	Synchronous	Asynchronous
+How it works	The leader waits until the replicas confirm the write, then tells the user “done”	The leader says “done” right away and sends the write to the replicas in the background
+Reads	Up to date on every replica	Can be stale until the replicas catch up
+Writes	Slower, and if any replica is down or slow, writes stop	Fast, and a dead replica doesn’t block anything
+If the leader dies	No confirmed write is lost	Writes not yet copied are lost
+In practice, semi-synchronous: one replica is synchronous and the rest are asynchronous. Every write exists on at least two machines, and one slow replica can’t stop writes. If the synchronous replica fails, another one is made synchronous.
+Eventual consistency: with asynchronous replication, replicas can be behind, but once writes stop, they all catch up eventually. “Eventually” has no time limit: usually it’s milliseconds, but under load it can be seconds or more.
+
+How changes get copied: the replication log
+
+Method	What’s sent	Problem
+Statement-based	The SQL commands themselves	Commands such as NOW() or RANDOM() give different results on each copy
+Write-ahead log shipping	The database’s own low-level log of the bytes changed on disk	Tied to the exact database version, so every copy must run the same version, and upgrades need downtime
+Logical (row-based) log	Each changed row: its key and its new values	Neither of the problems above, which makes it the usual choice
+A bonus of the logical log: other systems can read it too, for example to keep a search index or a cache up to date. That’s called change data capture (CDC), and it comes up often in designs.
+
+In an interview: “I’d replicate the database: the leader takes writes and the replicas serve reads. Replication is semi-synchronous, so every write is on two machines and one slow replica can’t block writes. Reads from replicas can be slightly stale, so anything that must be fresh reads from the leader.”
+
+
