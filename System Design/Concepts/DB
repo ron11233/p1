@@ -53,4 +53,43 @@ Trap: Cassandra and HBase are called “wide-column” databases, but they store
 In an interview: “The app database stays row-oriented for transactions. For analytics, I’d copy the data regularly into a column store such as BigQuery, or into Parquet files, because those queries scan many rows but only a few columns, and columns compress well.”
 
 
+15. Data serialization frameworks
+Serialization (encoding): turning an object in memory into bytes, to send over the network or save to disk. Deserialization turns the bytes back into an object.
+
+Text formats: JSON, XML, CSV
+
+Pros: people can read them, every language supports them, and browsers speak JSON.
+Cons:
+Big: every record repeats every field name, such as "userName".
+Slow to parse.
+Loose types: there’s no clear difference between an integer and a float, and no schema to say which fields must exist.
+
+Binary formats with a schema: Protocol Buffers (Google), Thrift (Facebook), Avro
+
+You write a schema once, giving each field a name, a type and a number called its tag. For example: string user_name = 1;.
+A tool generates the classes for each programming language from the schema.
+The bytes contain the tag number instead of the field name, and numbers are stored compactly. A record that takes about 80 bytes as JSON takes about 33 with Protocol Buffers.
+Pros: smaller and faster, typed, and the schema documents the data.
+Cons: people can’t read the bytes without the schema and a tool.
+
+Schema evolution: why they matter most
+
+Services are updated one machine at a time (a rolling upgrade), so old and new versions run side by side and must understand each other’s data.
+Backward compatible: new code reads data written by old code.
+Forward compatible: old code reads data written by new code.
+The rules, using Protocol Buffers as the example:
+Never change or reuse a field’s tag number.
+Give new fields new tags. Old code skips tags it doesn’t know, so it keeps working.
+New fields must be optional or have a default, so new code can read old data that lacks them.
+Only remove optional fields.
+Avro has no tag numbers. The reader compares the writer’s schema with its own and matches fields by name, so the writer’s schema has to travel with the data, for example in the file’s header.
+
+Where they’re used
+
+Between your own services: gRPC, which sends Protocol Buffers.
+In message queues and big data files: Avro is common with Kafka and Hadoop.
+Public APIs and browsers: these usually stay on JSON.
+
+In an interview: “The public API is JSON over HTTP. Between internal services I’d use gRPC with Protocol Buffers: messages are smaller and faster to parse, and the schema can change safely while old and new versions run side by side.”
+
 
