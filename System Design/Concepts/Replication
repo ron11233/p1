@@ -222,3 +222,94 @@ In an interview: “To avoid conflicts, each user’s writes go to their home re
 
 
 
+21. CRDTs (conflict-free replicated data types)
+The problem: with multi-leader replication, two leaders can change the same data at once (section 20). Last write wins loses data, and siblings push the merge onto your app.
+The idea: data types built so that any two copies can always be merged automatically, and every copy ends up with the same value, whatever order the updates arrive in and even if one arrives twice.
+The trick: each type keeps a little extra information, so a merge is never ambiguous.
+
+Counter
+
+Each leader counts only its own increments, for example {A: 5, B: 3}. The value is the sum, 8.
+Merging two copies: for each leader, keep the higher count. An increment is never lost, and never counted twice.
+Decrements (such as unlikes) use a second counter, and the value is increments minus decrements.
+
+Set (for example, a shopping cart)
+
+Adds only: merging is just the union of the two sets.
+Removes:
+An item can’t simply be deleted, because merging with a copy that still has it brings it back. So removed items go into a second set, the remove set. An item is in the cart if it’s in the add set and not in the remove set.
+This also works when a remove arrives before its add.
+The limit: once an item is removed, it can never be added again.
+Adding again:
+Every add gets a unique tag, such as “milk#1”. A remove deletes only the tags it has seen.
+Adding milk again creates “milk#2”. The old remove doesn’t cover it, so milk is back in the cart.
+If one leader removes milk while another adds it at the same moment, the add wins, because the remove never saw the new tag.
+
+Two ways to send updates
+
+Send the whole state: simple and safe, because merging twice or out of order gives the same result. But it sends more data over the network.
+Send only the operations, such as “+1 on leader A”: much less data. But each operation must be applied exactly once, so each one gets an ID and duplicates are skipped.
+
+Costs and limits
+
+The extra information grows. Tags and removed items pile up and need cleaning up.
+CRDTs can’t enforce “only one” rules, such as a unique username, no double booking, or a balance that can’t go below zero. Those need one place that decides, like a single leader.
+
+Where they’re used:
+
+Counters such as likes and views, shopping carts, and apps that work offline.
+Collaborative editors, through libraries such as Automerge and Yjs. (Google Docs uses a related technique, operational transformation, through a central server.)
+Redis Enterprise uses CRDTs to let several regions write at once.
+
+In an interview: “Likes are a CRDT counter. Each region counts its own likes, and merging keeps the highest count per region, so no like is lost and no region waits for another.”
+
+22. Leaderless replication
+
+The story: three replicas, R1, R2 and R3, and no leader
+
+Write: Maya changes her bio to “cute”. The app sends the write to all three replicas at once. R3 is down, but R1 and R2 confirm. Two out of three is enough, so the write succeeds.
+R3 comes back up. It still has the old bio, “hi”, so it’s stale.
+Read: Dan reads Maya’s bio. The app asks two replicas at once, say R2 and R3.
+R2 answers “cute”, version 7.
+R3 answers “hi”, version 6.
+The app takes the newer version, “cute”.
+Why that works: the write reached 2 of the 3 replicas, and the read asked 2 of the 3. Any two groups of two out of three share at least one replica, so the read always reaches at least one replica that has the latest write.
+
+The quorum rule: with N replicas, a write must be confirmed by W of them, and a read asks R of them. If W + R > N, every read overlaps with the latest write. The usual setting is N = 3, W = 2, R = 2. The next video goes deeper into this.
+
+Bringing stale replicas up to date
+
+Read repair: when a read notices that R3 sent an old version, the app writes the new version back to R3. This works well for data that’s read often.
+Anti-entropy: a background process compares replicas and copies over whatever is missing. It covers data that nobody reads.
+Merkle tree: a fast way to compare replicas without sending all the data. Each replica hashes its data in ranges, then hashes those hashes, up to a single top hash. Two replicas compare top hashes first. If they match, all the data matches. If not, they compare the halves below and follow only the parts that differ, so they find the missing rows by comparing a few hashes.
+
+Conflicts: two clients can write the same key on different replicas at the same moment, the same as with multi-leader. They’re handled the same ways: last write wins (Cassandra uses it), version vectors with siblings, or CRDTs (sections 20 and 21).
+
+Pros
+
+No leader, so no failover. A dead replica changes nothing, as long as W replicas can still take writes and R replicas can still answer reads.
+A slow replica doesn’t matter much, because the fastest W or R answers are enough.
+
+Cons
+
+Write conflicts, as with multi-leader replication.
+Reads cost more, because each read asks several replicas.
+Quorums aren’t a perfect guarantee, because of edge cases covered in the next video.
+
+Used in: Cassandra, Riak and ScyllaDB. All of them follow Amazon’s Dynamo paper. A trap to avoid: DynamoDB, the AWS product, isn’t leaderless. It uses a leader for each slice of its data.
+
+The three ways to replicate
+
+	Single leader	Multi-leader	Leaderless
+Who accepts writes	One leader	One leader per region	Any replica; a write must reach W of them
+If a machine dies	If it’s the leader, failover is needed	The other regions keep working	Nothing special, as long as W and R replicas respond
+Write conflicts	None	Yes	Yes
+Choose it for	The default, and anything that needs transactions	Several regions, or apps that work offline	Very high availability and lots of writes
+Examples	Postgres, MySQL	CouchDB	Cassandra, Riak, ScyllaDB
+
+In an interview: “For chat messages I’d use a leaderless store like Cassandra, with N = 3, W = 2 and R = 2. Any one replica can be down without stopping reads or writes. Each message gets a unique ID and is never edited, so conflicts don’t come up.”
+
+
+
+
+
