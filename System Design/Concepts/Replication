@@ -130,3 +130,95 @@ Users far from the leader write slowly, because every write travels to the leade
 Used in: Postgres, MySQL and MongoDB. It’s the default choice. The next videos cover when to choose multi-leader or leaderless replication instead.
 
 In an interview: “Single leader with semi-synchronous replication. Writes go to the leader and reads go to the followers, except a user’s own recent writes, which are read from the leader. If the leader dies, the follower that has every confirmed write is promoted automatically, and fencing stops the old leader from writing. One machine handles all writes, so if that isn’t enough, I’d partition.”
+
+
+19. Multi-leader replication
+Idea: more than one replica accepts writes. Each leader sends its writes to the other leaders, which copy them asynchronously.
+
+When it’s used
+
+Several regions: one leader per region, for example Europe and the US. Inside each region, replication is normal single-leader.
+Writes are fast, because each user writes to the leader in their own region.
+If a whole region goes down, the others keep taking writes, with no failover needed.
+A slow link between regions doesn’t block writes, because copying between regions is asynchronous.
+Apps that work offline: for example, a calendar on your phone and on your laptop. Each device is the leader for its own copy, and syncs when it’s back online.
+Collaborative editing: in Google Docs, each person’s copy accepts their edits immediately and syncs with the others.
+
+The big problem: write conflicts
+
+The story:
+A wiki page has the title “A”.
+Maya changes it to “B” on the Europe leader. At the same moment, Dan changes it to “C” on the US leader.
+Both writes succeed locally. When the leaders exchange writes, each finds a different title. Which one wins?
+With a single leader, the second write would have waited for a lock. Here both writes have already succeeded, and the conflict is only found later.
+Rules break too, not just fields. Each leader can sell seat 101, or create the same username, because locks and unique constraints only work inside one leader.
+Auto-increment IDs collide as well. Use IDs that can’t clash, such as UUIDs, or odd numbers on one leader and even numbers on the other.
+
+Handling conflicts
+
+Avoid them, the most common fix. Send all writes for one record to the same leader. For example, each user has a home region and all their writes go there. This only breaks when that region fails or the user moves.
+Last write wins. Each write gets a timestamp, and the highest one wins. It’s simple, but the losing write is silently thrown away. Also, clocks on different machines disagree, so “last” may not really be last.
+Merge. Combine the values. For example, a shopping cart keeps the items from both versions.
+Keep both and resolve later. Store both versions and let the app or the user choose, as in “this file was changed in two places”.
+CRDTs. Data types that merge automatically, such as counters and sets. They come later in the course.
+
+Topologies: how leaders send writes to each other
+
+Circle or star: writes pass from one leader to the next. If one leader dies, copying stops for those after it.
+All-to-all: every leader sends to every other leader. This survives failures better, but writes can arrive in a different order on different leaders. For example, an update can arrive before the insert it updates, which is the ordering problem from section 17.
+
+Pros
+
+Fast writes in every region.
+A whole region can go down without stopping writes.
+Works offline.
+
+Cons
+
+Write conflicts, which is the “chaos” in the title.
+Rules such as “no double booking” or “unique username” don’t hold across leaders.
+Much more complex to run and to reason about.
+
+In an interview: “Single leader is my default. If users in several regions need fast local writes, I’d use one leader per region and avoid conflicts by giving each user a home region. Where conflicts can still happen, last-write-wins is fine for data where losing an edit doesn’t matter, like a profile bio. Otherwise I’d merge. Anything with a hard rule, like seat bookings, stays on a single leader.”
+
+
+20. Dealing with write conflicts
+
+What “concurrent” really means
+
+Two writes are concurrent when neither one knew about the other. It isn’t about clock time.
+Dan reads Maya’s value, then writes his own. His write came after hers and simply replaces it, so there’s no conflict.
+Dan and Maya each write without seeing the other’s write. Their writes are concurrent and conflict, even if they were seconds apart.
+That’s why timestamps can’t decide: they can’t tell “came after” from “didn’t know about”, and clocks on different machines disagree.
+
+Version vectors: telling the two cases apart
+
+Each value carries one counter per leader. [A: 2, B: 1] means “this value includes 2 writes made on A and 1 made on B”.
+When a leader takes a write, it adds 1 to its own counter.
+Comparing two versions:
+If one is greater or equal in every position, it came after the other and replaces it. [A: 2, B: 1] replaces [A: 1, B: 1].
+If each is greater somewhere, neither knew about the other, so they’re concurrent. [A: 1, B: 0] and [A: 0, B: 1] conflict.
+Version vectors are also called vector clocks.
+
+The example: Jordan’s description
+
+On leader A, Maya writes “cute”, with [A: 1, B: 0].
+On leader B, Dan writes “scary”, with [A: 0, B: 1].
+When the leaders exchange writes, neither vector is greater in every position, so it’s a conflict. Both values are kept, as siblings.
+The next reader gets both, and the app merges them into “cute and scary”. It writes the result on leader A with [A: 2, B: 1], which is greater than both, so it replaces both.
+
+What to do with a conflict
+
+Last write wins: keep one value and silently drop the other (section 19). This is fine when losing an edit doesn’t matter. Cassandra and DynamoDB global tables use it.
+Keep siblings and merge on read: the app or the user merges them, and the merged write replaces the siblings. Amazon’s shopping cart merges by keeping the items from both versions. A removed item needs a tombstone, or the merge brings it back.
+CRDTs, data types that merge themselves: this is the next video. One example is a likes counter:
+Each leader counts its own likes.
+A merge keeps each leader’s highest count.
+The total is the sum of all the leaders’ counts.
+
+No like is lost, whatever order the updates arrive in.
+
+In an interview: “To avoid conflicts, each user’s writes go to their home region. Where conflicts can still happen, I’d detect them with version vectors. For data where losing an edit is fine, last write wins. For carts or documents, I’d keep both versions and merge, or use a CRDT. Counters work as a CRDT.”
+
+
+
