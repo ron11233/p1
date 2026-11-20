@@ -310,6 +310,49 @@ Examples	Postgres, MySQL	CouchDB	Cassandra, Riak, ScyllaDB
 In an interview: “For chat messages I’d use a leaderless store like Cassandra, with N = 3, W = 2 and R = 2. Any one replica can be down without stopping reads or writes. Each message gets a unique ID and is never edited, so conflicts don’t come up.”
 
 
+23. Quorums
+
+The rule
+
+There are N replicas. A write must be confirmed by W of them, and a read asks R of them.
+If W + R > N, the replicas you read from and the replicas that got the write always share at least one. So the read sees the latest write, and version numbers tell you which answer is the newest.
+Why: with N = 3 and W = 2, only one replica can be missing the write, and a read that asks 2 replicas can’t consist of just that one.
+The usual setting: N is odd, and W and R are each a majority. That means N = 3 with W = R = 2, or N = 5 with W = R = 3.
+How many replicas can be down: N = 3 with majorities survives 1 dead replica, and N = 5 survives 2.
+
+Tuning W and R, with N = 3
+
+Setting	Good for	Risk
+W = 2, R = 2	Balanced; the usual choice	One replica can be down for both reads and writes
+W = 3, R = 1	Fast reads	Any dead replica blocks writes
+W = 1, R = 3	Fast writes	Any dead replica blocks reads
+W = 1, R = 1	The fastest and most available	W + R isn’t greater than N, so reads can be stale
+
+Why it isn’t a perfect guarantee. Even with W + R > N, a read can return stale data:
+
+A failed write can still show up. The write needed 2 confirmations but only reached R1, so the user is told it failed. R1 doesn’t undo it, though. A later read from R1 and R2 sees the new value, while a read from R2 and R3 sees the old one.
+A read during a write. The write has reached R1 but not R2 yet. One read asks R1 and R2 and gets the new value. A moment later, another read asks R2 and R3 and gets the old value. The data seems to go back in time.
+A replica with the new value dies and is rebuilt from an old copy. Now fewer than W replicas have the new value, and the overlap is broken.
+Concurrent writes with last write wins. Clocks on different machines disagree, so the write that was really last can be dropped.
+Sloppy quorums, covered next.
+
+The takeaway: quorums make stale reads unlikely, not impossible. When you need a real guarantee, such as “no seat is ever sold twice”, you need a single leader or consensus, which comes later in the course.
+
+Sloppy quorum and hinted handoff
+
+The story:
+The cluster has 6 nodes. Maya’s data lives on R1, R2 and R3, its home nodes.
+A network problem cuts the app off from R2 and R3.
+With a strict quorum, the write fails, because only one home node can be reached.
+With a sloppy quorum, the write goes to R1 plus R4, a stand-in. That’s two confirmations, so it succeeds. R4 keeps a note, called a hint, that the write belongs to R2.
+When the network heals, R4 passes the write to R2 and deletes its copy. That’s hinted handoff.
+The cost: until the handoff, a read from R2 and R3 misses the write. A sloppy quorum buys write availability, but it gives up the overlap guarantee.
+
+Several data centers: you wait for a majority only in your own data center, and the other data centers get the write in the background. Cassandra calls this LOCAL_QUORUM. It gives fast local writes, like multi-leader replication.
+
+In an interview: “Cassandra with N = 3 and quorum reads and writes: one replica can be down without affecting anything, and reads are almost always fresh. Quorums aren’t a hard guarantee, so anything that must never be stale or double-booked goes to a store with a single leader.”
+
+
 
 
 
