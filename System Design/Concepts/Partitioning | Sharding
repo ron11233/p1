@@ -1,22 +1,51 @@
-why: 1. we are out of storage - storage is full. 2. we have w /r throughput bottleneck (especially write cuz read can scale pretty well with replicas - we need more databases to handle independently data. whne making multiple writes or reads we always hurt the other one. 
+25. Partitioning: intro
 
-partitiong - have the data stored different databases distributed by some technic. then each DB can scale on its own. 
-tehcnics:
-1. just by some order of column - for example shard by names. A-D on db A etc..
-pros- good for range queries - similar names will be prob in same shard so no need mix shards in 1 call 
-cons- hot spots - there might be many names start with A but not many with Z, then data isn't distributed evenly, which will cause waste of resources on the other hand for Z shard, and bottleneck in A shard - whcih will eventually cuz it to shard itself. 
+(24 was the replication summary video, which has no notes of its own.)
 
-2. hash by unique colum (id for example). hash will distribute evenly the column we chose. 
-pros- no hot spot on that column
-cons- it won't gurantee distrubte evenly. for example - we make shards by postId. famous actor will have so many likes and comments that will get this shard comapre to when i post. still can have hotspots. and range queries aren't fast since ranged values arent prob in same shard. 
+Partitioning (also called sharding): splitting the data into parts, each stored on a different machine. Each part holds different rows.
+Why:
+Storage: the data no longer fits on one machine.
+Write throughput: one leader can't take all the writes, and replicas only scale reads (section 16).
+With replication: each partition is replicated as usual, with its own leader and replicas. One machine can be the leader for some partitions and a follower for others.
+
+The partition key is the column that decides which partition a row goes to. Choosing it is the main design decision: rows with the same key stay together, so queries by that key go to one partition.
+
+1. By key range
+
+Each partition holds a sorted range of keys, like the volumes of an encyclopedia: A to Al, Am to Bz, and so on.
+The split points are chosen so each partition holds about the same amount of data.
+Pros: range queries stay on one or a few partitions, for example all names from "Dan" to "Dav". Rows are sorted inside each partition.
+Cons: access patterns can create hot spots. With a timestamp key, all of today's writes go to the last partition while the others sit idle.
+Fix: put another column first, such as sensor ID and then timestamp, so each sensor's writes go to a different range.
+
+2. By hash of the key
+
+Hash the partition key, and give each partition a range of hash values. A good hash spreads the keys evenly.
+Pros: data and load are spread evenly, with no hot ranges.
+Cons: a range query has to ask every partition, because neighboring keys end up scattered.
+A compromise, used by Cassandra: the key has two parts. The first part is hashed to choose the partition, and the second part sorts the rows inside it. With (user_id, created_at), all of a user's posts sit in one partition, sorted by time, so "Maya's posts this week" is a fast range query.
+
+Hot keys: when even hashing doesn't help
+
+One key can be hot on its own. A celebrity's post gets millions of likes, and they all go to the partition that holds that post.
+Fix: add a random number from 00 to 99 to the hot key, so its writes spread over 100 partitions. Reads must collect and combine all 100 parts, so only do this for the few keys you know are hot.
+
+Secondary indexes: querying by another column
+
+	Local secondary index	Global secondary index
+How	Each partition indexes only its own rows	A separate index covering all rows, itself partitioned by the indexed value. For example, heights under 6.3 on one partition and 6.3 or more on another
+Writes	Touch one partition	Can touch several: the row's partition plus the index's partitions
+Reads by the indexed column	Ask every partition and combine the answers (scatter-gather). Slow, and the slowest partition decides how long it takes	Go to one or a few partitions
+The catch	Every such read is expensive	Keeping the index in sync across machines would need a distributed transaction, so it's usually updated asynchronously and can be briefly stale. DynamoDB works this way
+
+What partitioning costs
+
+Queries that don't use the partition key have to ask every partition.
+Transactions and joins across partitions are slow and complex. Distributed transactions come later in the course.
+A wrong partition key is expensive to fix later.
+
+Back to consistent prefix (section 17): "keep related writes together" means choosing the partition key. Partition chat messages by chat_id, so a whole chat lives in one partition and its messages arrive in order.
+
+In an interview: "I'd partition posts by a hash of user_id, so each user's posts live together, sorted by time within the partition. Each partition has its own leader and replicas. Queries by other columns use a global secondary index, updated asynchronously. For celebrity hot keys, I'd split the key with a random suffix."
 
 
-
-what can help - secondary index. 
-we can index each shard based on some value. for example by height. then inside the shard it will be easy to query by height. 
-still for range queries for example get all 6.3 height - we need to go through all shards. 
-
-for that we have global secondary index.
-that means besides the hash sharding we have - we will make new shards that will be stored by different distribution. for example below 6.3 and above 6.3. 
-pros - easy to range queries
-cons- need to write for 2 different shards every time. makes w slow. and complication ofcourse what if one fails ... . .  . 
